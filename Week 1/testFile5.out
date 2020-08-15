@@ -1,0 +1,8 @@
+CHIPMemory{
+INin[16],load,address[15];
+OUTout[16];
+PARTS:
+RAM16(in=in,load=load,address=[2..15],out=dMemory);
+Screen(in=in,load=load,address=[2..15],out=s);
+Keyboard(out=out16);
+}

@@ -1,0 +1,55 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/05/Memory.hdl
+
+/**
+ * The complete address space of the Hack computer's memory,
+ * including RAM and memory-mapped I/O. 
+ * The chip facilitates read and write operations, as follows:
+ *     Read:  out(t) = Memory[address(t)](t)
+ *     Write: if load(t-1) then Memory[address(t-1)](t) = in(t-1)
+ * In words: the chip always outputs the value stored at the memory 
+ * location specified by address. If load==1, the in value is loaded 
+ * into the memory location specified by address. This value becomes 
+ * available through the out output from the next time step onward.
+ * Address space rules:
+ * Only the upper 16K+8K+1 words of the Memory chip are used. 
+ * Access to address>0x6000 is invalid. Access to any address in 
+ * the range 0x4000-0x5FFF results in accessing the screen memory 
+ * map. Access to address 0x6000 results in accessing the keyboard 
+ * memory map. The behavior in these addresses is described in the 
+ * Screen and Keyboard chip specifications given in the book.
+ */
+
+CHIP Memory {
+    IN in[16], load, address[15];
+    OUT out[16];
+
+    PARTS:
+    // NOTES:
+    // address[13..14] of in[a] determines if scrn, kbd, or RAM16K is accessed.
+   	// If address[14]=0 then RAM16K is accessed no matter what address[13] is.
+   	// If address[14]=1 and RAM[13]=0 then scrn is accessed.
+   	// If address[14]=1 and address[13]=1 then kbd is accessed.
+   	// Each address has two options so the load bit will be 4 bits.
+   		/* If MSB or second MSB of load bit is 1 then ram is loaded.*/
+   		/* If second LSB of load bit is 1 then screen is loaded.*/
+   		/* If LSB of load bit is 1 then kbd is loaded. */
+
+   	// Need DMux4Way to parse the 4-bit load.
+    DMux4Way(in=load, sel=address[13..14], a=ram1, b=ram2, c=scrn, d=kbd);
+
+    // If either ram1 of ram2 is 1 then we load ram.
+    // RAM16K also has 14 bits that determine what register in RAM16K is accessed.
+    Or(a=ram1, b=ram2, out=ram);
+    RAM16K(in=in, load=ram, address=address[0..13], out=ramOut);
+
+    // Screen is a RAM8K (which we have not made ourselves) but would have 13 bits that determine what register in RAM8K is accessed.
+    // Keyboard is a given chip.
+    Screen(in=in, load=scrn, address=address[0..12], out=scrnOut);
+    Keyboard(out=kbdOut);
+
+    // Need to choose between RAM16K, Screen, and Keyboard output using address[13..14].
+    Mux4Way16(a=ramOut, b=ramOut, c=scrnOut, d=kbdOut, sel=address[13..14], out=out);  
+}

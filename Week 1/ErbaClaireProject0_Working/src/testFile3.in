@@ -1,0 +1,111 @@
+/*************************************************************************************************************************************
+Privileged & Confidential
+
+Project Name: ROLLINS ACQ (113373)
+Description of Analysis: Calculate residential and commercial market shares for Clark and Rollins in areas where their services overlaps
+Creator: Claire Erba
+Start Date: 1/10/2019
+Completion Date:
+Checker (if applicable): 
+Date Checking Completed (if applicable):
+**************************************************************************************************************************************/
+
+dm log 'clear';
+options mprint mlogic symbolgen errors=5 compress=yes spool;
+
+%let path = X:\Antitrust\ROLLINS ACQ (113373)\SAS\CE;
+%let input = &path.\input;
+%let raw = &path.\raw;
+%let export = &path.\output;
+%let lookups = &path.\lookups;
+
+/*import data*/
+
+	/*import household data*/
+	proc import datafile="&input.\2016_households_by_zip_income.xlsx" out=households_by_zip_income_16 dbms=xlsx replace; run;
+	proc import datafile="&input.\2017_households_by_zip_income.xlsx" out=households_by_zip_income_17 dbms=xlsx replace; run;
+
+	/*import business data*/
+	%let states = AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY;
+	%macro import_bus(states);
+   		%let n = %sysfunc(countw(&states));
+   		%do i=1 %to &n;
+   		%let val = %scan(&states,&i);
+			proc import datafile="&raw.\business data\AK\BP_2016_00CZ2_with_ann.csv" out=AK_businesses dbms=csv replace; run;
+		%end;
+	%mend;
+	%import_bus(&states);
+
+	/*import lookups*/
+	proc import datafile="&lookups.\uszipsv1.4.csv" out=zip_to_other_geo_lookup dbms=csv replace; run;
+	data zip_to_other_geo_lookup; set zip_to_other_geo_lookup; 
+		zip2 = input(zip, 8.);
+		drop zip;
+		rename zip2=zip;
+	run;
+
+/*calculate Rollins' residential revenue & number of customers by zip and year*/
+/*calculate Rollins' commercial revenue & number of customers by zip, year, and sector*/
+
+/*calculate Clark's residential revenue & number of customers by zip and year*/
+/*calculate Clark's commercial revenue & number of customers by zip, year, and sector*/
+
+/*find residential zipcodes where Rollins and Clark overlap for a given year*/
+/*find commercial zipcodes where Rollins and Clark overlap for a given year*/
+
+/*calculate total market for residential and commercial professional pest control services in a zip and year (and income for resd. and sector for commercial)*/
+/*note: take the household and business data and multiply number of each by the penetration rates*/
+
+	/*residential*/
+	%macro clean_household_data(year,value);
+		proc transpose data=households_by_zip_income_&year (keep=Id2 &value:) out=households_&year._&value. (rename=(COL1=&value._&year _NAME_=income_band ID2=zip) drop=_LABEL_);
+			by Id2;
+		run;
+		data households_&year._&value.; set households_&year._&value.; 
+			label income_band=income_band Id2=zip; 
+			if income_band="households_total" then delete;
+			income_band=tranwrd(income_band, "&value._",""); 
+		run;
+		proc sql noprint;
+			create table households_&year._&value. as select * from households_&year._&value. as a
+			left join /*[penetration data]*/ as b
+			on a.zip=b./*[zipcode variable]*/ and
+			   a.income_band=b./*[income band variable]*/
+		quit;
+		data households_&year._&value.; set households_&year._&value.; 
+			&value._&year=&value._&year*/*[penetration rate]*/; 
+			drop /*[penetration rate]*/;
+		run;		
+		proc sort data=households_&year._&value.; by zip income_band; run;
+	%mend;
+	%clean_household_data(16,households);
+	%clean_household_data(16,margin);
+	%clean_household_data(17,households);
+	%clean_household_data(17,margin);
+
+	data households_cleaned_dataset;
+		merge households_16_households households_16_margin households_17_households households_17_margin;
+		by zip income_band;
+	run;
+
+	/*commercial*/
+	data businesses_cleaned_dataset; set businesses_by_zip_sector_16;
+		rename Id2=zip Meaning_of_2012_NAICS_code=sector;
+		label zip=zip sector=sector;
+		if sector="Total for all sectors" then delete;
+		if Meaning_of_Employment_size_of_es^="All establishments" then delete;
+	run;
+	proc means data=businesses_cleaned_dataset nway missing noprint ;
+		class zip sector;
+		output out=businesses_cleaned_dataset (drop = _TYPE_ _FREQ_) sum(Number_of_establishments)=;
+	run;
+	proc sql noprint;
+		create table businesses_cleaned_dataset as select * from businesses_cleaned_dataset as a
+		left join /*penetration data*/ as b
+		on a.Id2=b./*[zipcode variable]*/
+		   a.Meaning_of_2012_NAICS_code=b./*[sector variable]*/;
+	quit;
+
+/*calculate residential market share by overlapping zips for a given year*/
+
+/*calculate commercial market share by oberlapping zips for a given sector and year
